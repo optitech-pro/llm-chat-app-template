@@ -3,27 +3,32 @@
 //  OptiTech Sverige
 // ============================================================
 
-const MODEL_ID     = "@cf/meta/llama-3.1-8b-instruct-fp8";
+const MODEL_ID      = "@cf/meta/llama-3.1-8b-instruct-fp8";
 const SYSTEM_PROMPT = "You are a helpful, friendly assistant. Provide concise and accurate responses.";
 
-// ── Byt ut mot din WordPress-domän ───────────────────────────
-const ALLOWED_ORIGIN = "https://optitech.se";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin":  ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, x-api-key",
-};
+// ── CORS ──────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  "https://optitech-sverige.se",
+  "https://www.optitech-sverige.se",
+];
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
 
-// ── Huvud-handler ────────────────────────────────────────────
+// ── Huvud-handler ─────────────────────────────────────────────
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
+    const origin       = request.headers.get("Origin") ?? "";
+    const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+    const corsHeaders = {
+      "Access-Control-Allow-Origin":  allowedOrigin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-api-key",
+    };
 
     // Hantera CORS preflight
     if (request.method === "OPTIONS") {
@@ -38,7 +43,7 @@ export default {
     // Chat-endpoint
     if (pathname === "/api/chat") {
       return request.method === "POST"
-        ? handleChatRequest(request, env)
+        ? handleChatRequest(request, env, corsHeaders)
         : new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
     }
 
@@ -46,8 +51,12 @@ export default {
   },
 };
 
-// ── Chat-hanterare ───────────────────────────────────────────
-async function handleChatRequest(request: Request, env: Env): Promise<Response> {
+// ── Chat-hanterare ────────────────────────────────────────────
+async function handleChatRequest(
+  request:     Request,
+  env:         Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
   try {
     // Validera API-nyckel
     const apiKey = request.headers.get("x-api-key");
@@ -58,7 +67,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
       });
     }
 
-    const body = await request.json<{ messages?: ChatMessage[] }>();
+    const body     = await request.json<{ messages?: ChatMessage[] }>();
     const messages: ChatMessage[] = body.messages ?? [];
 
     // Injicera system-prompt om saknas
@@ -84,7 +93,10 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
     console.error("[Chat] Fel:", error);
     return new Response(
       JSON.stringify({ error: "Failed to process request" }),
-      { status: 500, headers: { ...corsHeaders, "content-type": "application/json" } }
+      {
+        status:  500,
+        headers: { ...corsHeaders, "content-type": "application/json" },
+      }
     );
   }
 }
